@@ -1,0 +1,10 @@
+[Unit]
+Description=Kellersensoren
+After=syslog.target
+
+[Service]
+ExecStart=/usr/local/bin/kellersensoren
+Type=simple
+
+[Install]
+WantedBy=multi-user.target

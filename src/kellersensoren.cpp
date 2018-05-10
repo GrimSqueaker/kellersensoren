@@ -13,9 +13,17 @@
 #include <iomanip>
 
 #include <curl/curl.h>
+
+#include "argh.h"
  
 #define MAXTIMINGS	85
 #define DHTPIN		7 // 7 = vorne, 0 = mitte, 2 = hinten
+
+namespace config
+{
+    bool verbose = false;
+}
+
 
 float convertIntFracToDouble(int integer, int fraction) {
     float result = integer;
@@ -51,7 +59,7 @@ void sendToOpenHAB(const std::string &url, const std::string &send_data)
 	CURL *curl = curl_easy_init();
 	if (curl) {
 		curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
-		curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+		curl_easy_setopt(curl, CURLOPT_VERBOSE, config::verbose ? 1L : 0L);
 		curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
 		curl_easy_setopt(curl, CURLOPT_PUT, 1L);
 		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -152,37 +160,55 @@ Sensordata read_dht11_dat(int gpio_pin)
         good = true;
     }
     else  {
-        std::cout << "     Checksum error, raw data = "
-            << dht11_dat[0] << ", " << dht11_dat[1] << ", "
-            << dht11_dat[2] << ", " << dht11_dat[3] << ", " << dht11_dat[4] << '\n';
+        if (config::verbose)
+            std::cout << "     Checksum error, raw data = "
+                      << dht11_dat[0] << ", " << dht11_dat[1] << ", "
+                      << dht11_dat[2] << ", " << dht11_dat[3] << ", " << dht11_dat[4] << '\n';
     }
 
     Sensordata data = {good, dht11_dat[0], dht11_dat[1], dht11_dat[2], dht11_dat[3]};
     return data;
 }
 
-int main( void )
+int main(int, char* argv[])
 {
+    // setup: CLI args
+    argh::parser cmdl(argv);
+    if (cmdl[{ "-v", "--verbose" }]) {
+        config::verbose = true;
+    }
+    if (cmdl[{ "--help" }]) {
+        std::cout << "kellersensoren" << '\n';
+        std::cout << "  --help          This help" << '\n';
+        std::cout << "  -v, --verbose   Verbose output" << '\n';
+        return EXIT_SUCCESS;
+    }
+
+    // setup: wiringPi
     if ( wiringPiSetup() == -1 ) {
         std::cout << "Error in wiringPiSetup\n";
-        exit(1);
+        return EXIT_FAILURE;
     }
   
+    // setup: CURL
     curl_global_init(CURL_GLOBAL_ALL);
 
     while (1) {
         for (auto room: KELLER) {
-            std::cout << "\nRaum " << room.room_name << '\n';
+            if (config::verbose)
+                std::cout << "\nRaum " << room.room_name << '\n';
+
             Sensordata data = read_dht11_dat(room.gpio_pin);
             if (data.good) {
                 float humidity = convertIntFracToDouble(data.humidity_integer, data.humidity_fraction);
                 float temperature = convertIntFracToDouble(data.temperature_integer, data.temperature_fraction);
                 float dewpoint = computeDewPoint(temperature, humidity);
-                std::cout 
-                    << "Temperature = " << temperature << "C   "
-                    << "Humidity = " << humidity << "%   "
-                    << "Dew point = " << dewpoint << "C   "
-                    << "\n";
+
+                if (config::verbose)
+                    std::cout << "Temperature = " << temperature << "C   "
+                              << "Humidity = " << humidity << "%   "
+                              << "Dew point = " << dewpoint << "C   "
+                              << "\n";
 
                 std::string sendString;
                 sendString = std::to_string(data.humidity_integer) + "." + std::to_string(data.humidity_fraction);
@@ -200,5 +226,5 @@ int main( void )
 
     curl_global_cleanup();
 
-    return 0;
+    return EXIT_SUCCESS;
 }

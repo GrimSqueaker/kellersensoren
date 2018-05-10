@@ -1,0 +1,5 @@
+[requires]
+argh/1.2.1@adishavit/stable
+
+[generators]
+cmake

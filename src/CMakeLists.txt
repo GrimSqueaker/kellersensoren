@@ -11,7 +11,7 @@ add_executable (
 
 target_link_libraries (
     kellersensoren 
-    LINK_PUBLIC wiringPi wiringPiDev ${LIBCURL_LIBRARIES}
+    LINK_PUBLIC wiringPi wiringPiDev ${LIBCURL_LIBRARIES} ${CONAN_LIBS}
     )
 
 target_include_directories (
@@ -22,4 +22,9 @@ target_include_directories (
 target_compile_options (
     kellersensoren 
     PUBLIC "-std=c++11" ${LIBCURL_CXXFLAGS_OTHER}
+    )
+
+install(
+    TARGETS kellersensoren
+    RUNTIME DESTINATION bin
     )
