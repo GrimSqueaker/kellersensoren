@@ -212,17 +212,17 @@ int main(int, char* argv[])
                 float dewpoint = computeDewPoint(temperature, humidity);
                 std::time_t update_time = std::time(nullptr);
                 std::tm *localtime = std::localtime(&update_time);
-//                std::string update_time_string = 
-//                    std::to_string(1900+localtime->tm_year) + "-"
-//                    + std::to_string(1+localtime->tm_mon) + "-"
-//                    + std::to_string(localtime->tm_mday) + "-"
-//                    + std::to_string(1+localtime->tm_hour) + "-"
-//                    + std::to_string(1+localtime->tm_min) + "-"
-//                    + std::to_string(1+localtime->tm_sec);
+                std::string update_time_string = 
+                    std::to_string(1900+localtime->tm_year) + "-"
+                    + std::to_string(1+localtime->tm_mon) + "-"
+                    + std::to_string(localtime->tm_mday) + "T"
+                    + std::to_string(1+localtime->tm_hour) + ":"
+                    + std::to_string(1+localtime->tm_min) + ":"
+                    + std::to_string(1+localtime->tm_sec);
 
                 if (config::verbose)
-//                    std::cout << "Time = " << update_time_string << "   "
-                    std::cout << "Temperature = " << temperature << "C   "
+                    std::cout << "Time = " << update_time_string << "   "
+                              << "Temperature = " << temperature << "C   "
                               << "Humidity = " << humidity << "%   "
                               << "Dew point = " << dewpoint << "C   "
                               << "\n";
