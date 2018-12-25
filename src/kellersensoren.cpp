@@ -82,6 +82,7 @@ void sendToOpenHAB(const std::string &url, const std::string &send_data)
 struct Raum {
     int gpio_pin;
     std::string room_name;
+    std::string update_time_url;
     std::string humidity_url;
     std::string temperature_url;
     std::string dewpoint_url;
@@ -100,6 +101,7 @@ std::vector<Raum> KELLER = {
         {
             7,
             "Keller vorne",
+            "http://ratzpi:8080/rest/items/Updatezeit_Vorne/state",
             "http://ratzpi:8080/rest/items/Luftfeuchtigkeit_Keller_Vorne/state",
             "http://ratzpi:8080/rest/items/Temperatur_Keller_Vorne/state",
             "http://ratzpi:8080/rest/items/Taupunkt_Keller_Vorne/state",
@@ -107,6 +109,7 @@ std::vector<Raum> KELLER = {
         {
             0,
             "Keller mitte",
+            "http://ratzpi:8080/rest/items/Updatezeit_Mitte/state",
             "http://ratzpi:8080/rest/items/Luftfeuchtigkeit_Keller_Mitte/state",
             "http://ratzpi:8080/rest/items/Temperatur_Keller_Mitte/state",
             "http://ratzpi:8080/rest/items/Taupunkt_Keller_Mitte/state",
@@ -114,6 +117,7 @@ std::vector<Raum> KELLER = {
         {
             2,
             "Keller hinten",
+            "http://ratzpi:8080/rest/items/Updatezeit_Hinten/state",
             "http://ratzpi:8080/rest/items/Luftfeuchtigkeit_Keller_Hinten/state",
             "http://ratzpi:8080/rest/items/Temperatur_Keller_Hinten/state",
             "http://ratzpi:8080/rest/items/Taupunkt_Keller_Hinten/state",
@@ -228,6 +232,7 @@ int main(int, char* argv[])
                               << "\n";
 
                 std::string sendString;
+                sendToOpenHAB(room.update_time_url, update_time_string);
                 sendString = std::to_string(data.humidity_integer) + "." + std::to_string(data.humidity_fraction);
                 sendToOpenHAB(room.humidity_url, sendString);
                 sendString = std::to_string(data.temperature_integer) + "." + std::to_string(data.temperature_fraction);
