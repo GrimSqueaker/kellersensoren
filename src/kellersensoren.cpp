@@ -22,6 +22,7 @@
 namespace config
 {
     bool verbose = false;
+    bool local = false;
 }
 
 
@@ -56,6 +57,9 @@ namespace
 
 void sendToOpenHAB(const std::string &url, const std::string &send_data)
 {
+	if (config::local) {
+		return;
+	}
 	CURL *curl = curl_easy_init();
 	if (curl) {
 		curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
@@ -177,6 +181,9 @@ int main(int, char* argv[])
     if (cmdl[{ "-v", "--verbose" }]) {
         config::verbose = true;
     }
+    if (cmdl[{ "-l", "--local" }]) {
+        config::local = true;
+    }
     if (cmdl[{ "--help" }]) {
         std::cout << "kellersensoren" << '\n';
         std::cout << "  --help          This help" << '\n';
@@ -191,7 +198,7 @@ int main(int, char* argv[])
     }
   
     // setup: CURL
-    curl_global_init(CURL_GLOBAL_ALL);
+    if (!config::local) curl_global_init(CURL_GLOBAL_ALL);
 
     while (1) {
         for (auto room: KELLER) {
@@ -203,8 +210,18 @@ int main(int, char* argv[])
                 float humidity = convertIntFracToDouble(data.humidity_integer, data.humidity_fraction);
                 float temperature = convertIntFracToDouble(data.temperature_integer, data.temperature_fraction);
                 float dewpoint = computeDewPoint(temperature, humidity);
+                std::time_t update_time = std::time(nullptr);
+                std::tm *localtime = std::localtime(&update_time);
+//                std::string update_time_string = 
+//                    std::to_string(1900+localtime->tm_year) + "-"
+//                    + std::to_string(1+localtime->tm_mon) + "-"
+//                    + std::to_string(localtime->tm_mday) + "-"
+//                    + std::to_string(1+localtime->tm_hour) + "-"
+//                    + std::to_string(1+localtime->tm_min) + "-"
+//                    + std::to_string(1+localtime->tm_sec);
 
                 if (config::verbose)
+//                    std::cout << "Time = " << update_time_string << "   "
                     std::cout << "Temperature = " << temperature << "C   "
                               << "Humidity = " << humidity << "%   "
                               << "Dew point = " << dewpoint << "C   "
@@ -224,7 +241,7 @@ int main(int, char* argv[])
         delay(10000); 
     }
 
-    curl_global_cleanup();
+    if (!config::local) curl_global_cleanup();
 
     return EXIT_SUCCESS;
 }
