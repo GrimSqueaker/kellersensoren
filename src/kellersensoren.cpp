@@ -11,8 +11,8 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
-
-#include <curl/curl.h>
+#include <fstream>
+#include <algorithm>
 
 #include "argh.h"
  
@@ -22,7 +22,6 @@
 namespace config
 {
     bool verbose = false;
-    bool local = false;
 }
 
 
@@ -46,46 +45,24 @@ float computeDewPoint(float temperature, float relHumidity) {
     return (c*std::log(P_a/a)) / (b - std::log(P_a/a));
 }
 
-namespace
+void saveToFile(const std::string &file_name, const std::string &data)
 {
-	static size_t read_callback(void *ptr, size_t size, size_t nmemb, void *mydata)
-	{
-        strncpy(static_cast<char*>(ptr), static_cast<char*>(mydata), size * nmemb);
-        return size * nmemb;
-	}
-} // namespace
-
-void sendToOpenHAB(const std::string &url, const std::string &send_data)
-{
-	if (config::local) {
-		return;
-	}
-	CURL *curl = curl_easy_init();
-	if (curl) {
-		curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
-		curl_easy_setopt(curl, CURLOPT_VERBOSE, config::verbose ? 1L : 0L);
-		curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-		curl_easy_setopt(curl, CURLOPT_PUT, 1L);
-		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-		curl_easy_setopt(curl, CURLOPT_READDATA, send_data.c_str());
-		curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, (curl_off_t)send_data.size());
-
-		CURLcode res = curl_easy_perform(curl);
-		if (res != CURLE_OK)
-            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-
-		curl_easy_cleanup(curl);
-	}
+    std::ofstream os(file_name);
+    if (os) { 
+      os << data;
+    }
 }
 
 
 struct Raum {
     int gpio_pin;
     std::string room_name;
-    std::string update_time_url;
-    std::string humidity_url;
-    std::string temperature_url;
-    std::string dewpoint_url;
+    std::string update_time_file;
+    std::string humidity_file;
+    std::string temperature_file;
+    std::string dewpoint_file;
+    std::vector<float> temperature_history;
+    std::vector<float> humidity_history;
 };
 
 struct Sensordata {
@@ -101,26 +78,29 @@ std::vector<Raum> KELLER = {
         {
             7,
             "Keller vorne",
-            "http://ratzpi:8080/rest/items/Updatezeit_Vorne/state",
-            "http://ratzpi:8080/rest/items/Luftfeuchtigkeit_Keller_Vorne/state",
-            "http://ratzpi:8080/rest/items/Temperatur_Keller_Vorne/state",
-            "http://ratzpi:8080/rest/items/Taupunkt_Keller_Vorne/state",
+            "/var/www/html/kellersensoren/keller/vorne/updatezeit.txt",
+            "/var/www/html/kellersensoren/keller/vorne/luftfeuchtigkeit.txt",
+            "/var/www/html/kellersensoren/keller/vorne/temperatur.txt",
+            "/var/www/html/kellersensoren/keller/vorne/taupunkt.txt",
+	    {}, {},
         },
         {
             0,
             "Keller mitte",
-            "http://ratzpi:8080/rest/items/Updatezeit_Mitte/state",
-            "http://ratzpi:8080/rest/items/Luftfeuchtigkeit_Keller_Mitte/state",
-            "http://ratzpi:8080/rest/items/Temperatur_Keller_Mitte/state",
-            "http://ratzpi:8080/rest/items/Taupunkt_Keller_Mitte/state",
+            "/var/www/html/kellersensoren/keller/mitte/updatezeit.txt",
+            "/var/www/html/kellersensoren/keller/mitte/luftfeuchtigkeit.txt",
+            "/var/www/html/kellersensoren/keller/mitte/temperatur.txt",
+            "/var/www/html/kellersensoren/keller/mitte/taupunkt.txt",
+	    {}, {},
         },
         {
             2,
             "Keller hinten",
-            "http://ratzpi:8080/rest/items/Updatezeit_Hinten/state",
-            "http://ratzpi:8080/rest/items/Luftfeuchtigkeit_Keller_Hinten/state",
-            "http://ratzpi:8080/rest/items/Temperatur_Keller_Hinten/state",
-            "http://ratzpi:8080/rest/items/Taupunkt_Keller_Hinten/state",
+            "/var/www/html/kellersensoren/keller/hinten/updatezeit.txt",
+            "/var/www/html/kellersensoren/keller/hinten/luftfeuchtigkeit.txt",
+            "/var/www/html/kellersensoren/keller/hinten/temperatur.txt",
+            "/var/www/html/kellersensoren/keller/hinten/taupunkt.txt",
+	    {}, {},
         },
     }
 };
@@ -131,7 +111,7 @@ Sensordata read_dht11_dat(int gpio_pin)
     uint8_t laststate = HIGH;
     uint8_t counter = 0;
     uint8_t j = 0, i;
-    int dht11_dat[5] = { 0, 0, 0, 0, 0 };
+    std::array<int, 6> dht11_dat = { 0, 0, 0, 0, 0, 0 };
 
     pinMode( gpio_pin, OUTPUT );
     digitalWrite( gpio_pin, HIGH );
@@ -155,9 +135,9 @@ Sensordata read_dht11_dat(int gpio_pin)
             break;
 
         if ( (i >= 4) && (i % 2 == 0) ) {
-            dht11_dat[j / 8] <<= 1;
+            dht11_dat.at(j / 8) <<= 1;
             if ( counter > 16 ) {
-                dht11_dat[j / 8] |= 1;
+                dht11_dat.at(j / 8) |= 1;
             }
             j++;
         }
@@ -178,15 +158,35 @@ Sensordata read_dht11_dat(int gpio_pin)
     return data;
 }
 
+float updateHistoryAndReturnMedian(std::vector<float>& history, float value)
+{
+    if (history.size() == 0) {
+	history.resize(5);
+        history[0] = value;
+        history[1] = value;
+        history[2] = value;
+        history[3] = value;
+        history[4] = value;
+    }
+
+    history[4] = history[3];
+    history[3] = history[2];
+    history[2] = history[1];
+    history[1] = history[0];
+    history[0] = value;
+
+    auto shist = history;
+    std::sort(shist.begin(), shist.end());
+
+    return shist[2];
+}
+
 int main(int, char* argv[])
 {
     // setup: CLI args
     argh::parser cmdl(argv);
     if (cmdl[{ "-v", "--verbose" }]) {
         config::verbose = true;
-    }
-    if (cmdl[{ "-l", "--local" }]) {
-        config::local = true;
     }
     if (cmdl[{ "--help" }]) {
         std::cout << "kellersensoren" << '\n';
@@ -200,9 +200,6 @@ int main(int, char* argv[])
         std::cout << "Error in wiringPiSetup\n";
         return EXIT_FAILURE;
     }
-  
-    // setup: CURL
-    if (!config::local) curl_global_init(CURL_GLOBAL_ALL);
 
     while (1) {
         for (auto room: KELLER) {
@@ -213,7 +210,7 @@ int main(int, char* argv[])
             if (data.good) {
                 float humidity = convertIntFracToDouble(data.humidity_integer, data.humidity_fraction);
                 float temperature = convertIntFracToDouble(data.temperature_integer, data.temperature_fraction);
-                float dewpoint = computeDewPoint(temperature, humidity);
+
                 std::time_t update_time = std::time(nullptr);
                 std::tm *localtime = std::localtime(&update_time);
                 std::string update_time_string = 
@@ -223,30 +220,38 @@ int main(int, char* argv[])
                     + std::to_string(1+localtime->tm_hour) + ":"
                     + std::to_string(1+localtime->tm_min) + ":"
                     + std::to_string(1+localtime->tm_sec);
+                if (config::verbose)
+                    std::cout << "Time = " << update_time_string
+			      << "\n"
+                              << "Raw Temperature = " << temperature << "C   "
+                              << "Raw Humidity = " << humidity << "%   "
+                              << "\n";
+
+                humidity = updateHistoryAndReturnMedian(room.humidity_history, humidity);
+                temperature = updateHistoryAndReturnMedian(room.temperature_history, temperature);
+
+                float dewpoint = computeDewPoint(temperature, humidity);
 
                 if (config::verbose)
-                    std::cout << "Time = " << update_time_string << "   "
-                              << "Temperature = " << temperature << "C   "
+                    std::cout << "Temperature = " << temperature << "C   "
                               << "Humidity = " << humidity << "%   "
                               << "Dew point = " << dewpoint << "C   "
                               << "\n";
 
                 std::string sendString;
-                sendToOpenHAB(room.update_time_url, update_time_string);
+                saveToFile(room.update_time_file, update_time_string);
                 sendString = std::to_string(data.humidity_integer) + "." + std::to_string(data.humidity_fraction);
-                sendToOpenHAB(room.humidity_url, sendString);
+                saveToFile(room.humidity_file, sendString);
                 sendString = std::to_string(data.temperature_integer) + "." + std::to_string(data.temperature_fraction);
-                sendToOpenHAB(room.temperature_url, sendString);
+                saveToFile(room.temperature_file, sendString);
                 std::ostringstream conv;
                 conv << std::fixed << std::setprecision(1) << dewpoint;
                 sendString = conv.str();
-                sendToOpenHAB(room.dewpoint_url, sendString);
+                saveToFile(room.dewpoint_file, sendString);
             }
         }
         delay(10000); 
     }
-
-    if (!config::local) curl_global_cleanup();
 
     return EXIT_SUCCESS;
 }
